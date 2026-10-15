@@ -1,0 +1,18 @@
+"""Calcolo della performance di un portafoglio (usato dall'andamento in tempo reale e dal report)."""
+
+from __future__ import annotations
+
+from core import dati
+from core.mercato import mercato_reale
+from core.performance import Contesto, calcola
+
+
+def calcola_portafoglio(c: dict, pid: str, reg, da, a, mercato=None) -> dict:
+    manuali = dati.carica_manuali()
+    m = mercato or mercato_reale(manuali=manuali)
+    v = dati.vista_portafoglio(c, pid)
+    ctx = Contesto(base=v["valuta_base"], fx=m.fx, prezzo=m.prezzo, spot=m.spot)
+    tx = dati.transazioni_ordinate(v)
+    ris = calcola(tx, reg.strumenti, str(da), str(a), ctx, saldi_liquidita=dati.saldi_a_data(v, str(a)))
+    incoerenti = [e for e in m.controllo_acquisti(tx, reg.strumenti) if e["stato"] == "incoerente"]
+    return {"ris": ris, "problemi": m.problemi(), "incoerenti": incoerenti, "snapshot": m.snapshot_attuale(), "da": str(da), "a": str(a), "cliente": c["id"], "portafoglio": pid}
