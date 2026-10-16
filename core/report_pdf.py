@@ -373,7 +373,7 @@ def _sezione_sintesi(ris, cliente, base):
         ("Performance dall'inizio", pct(inizio, segno=True), f"nominale {'+' if (tot.get('pl_dall_inizio') or 0) >= 0 else '−'}{base} {n(abs(tot.get('pl_dall_inizio') or 0), 0)} · {sub_inizio}"),
     ]))
     el.append(Spacer(1, 6))
-    el.append(riga_rischio(cliente.get("rischio")))
+    el.append(riga_rischio(cliente.get("rischio"), "cerchi"))
     el.append(Spacer(1, 4))
     el.append(P(f"COME È INVESTITO IL PATRIMONIO (in {base})", "titolo"))
     for titolo, dati_, etich in (("Per tipo di investimento", ris["allocazione"], CATEGORIE), ("Per valuta", ris["valute"], {})):
@@ -453,9 +453,12 @@ def _sezione_cedole(ris, base, da, a):
                           extra=[("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"), ("LINEABOVE", (0, -1), (-1, -1), 0.6, NERO)]))
     fut = ris["cedole_future"]
     if fut:
-        mesi = _mesi_tra(ris["periodo"]["a"], max(f["data"] for f in fut))[1:13] or _mesi_tra(ris["periodo"]["a"], ris["periodo"]["a"])
-        el.append(KeepTogether([P("CEDOLE ATTESE NEI PROSSIMI 12 MESI", "titolo"), _img(grafico_mensile(fut, mesi, per_tipo=False, mm=160), 160),
-                                P(_nota_cedole(fut, base), "piccolo")]))
+        righe_f = [[dt(f["data"]), P(f["nome"]), f.get("valuta", base), n(f.get("importo", f["importo_base"])), n(f["importo_base"])] for f in sorted(fut, key=lambda x: x["data"])]
+        righe_f.append(["", P("<b>Totale</b>"), "", "", n(sum(f["importo_base"] for f in fut))])
+        el.append(KeepTogether([P("CEDOLE ATTESE NEI PROSSIMI 12 MESI", "titolo"),
+                                tabella(["Data", "Prodotto", "Val.", "Importo", f"In {base}"], righe_f, [20, 80, 12, 26, 30], allinea_destra_da=2,
+                                        extra=[("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"), ("LINEABOVE", (0, -1), (-1, -1), 0.6, NERO)]),
+                                Spacer(1, 3), P(_nota_cedole(fut, base), "piccolo")]))
     if ris["cedole_future_non_calcolabili"]:
         el.append(P("Cedole future non calcolabili per: " + ", ".join(ris["cedole_future_non_calcolabili"]) + " (manca la data dell'ultima cedola o di emissione).", "piccolo"))
     return el

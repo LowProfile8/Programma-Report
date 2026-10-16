@@ -50,12 +50,37 @@ def _html(codice: str, altezza: int):
         components.html(codice, height=altezza)
 
 
-@st.cache_data(ttl=600, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
+def _indici():
+    from core import indici
+    return indici.quotazioni()
+
+
+def _barra_indici():
+    """Tutti gli indici con prezzo e variazione giornaliera, affiancati (nessuna barra scorrevole); se i dati non arrivano, widget TradingView."""
+    q = _indici()
+    if not any(x["prezzo"] is not None for x in q):
+        _html(_tape(), 90)
+        return
+    celle = []
+    for x in q:
+        if x["prezzo"] is None:
+            celle.append(f"<div class='idx'><span class='n'>{x['nome']}</span><span class='p'>n.d.</span></div>")
+            continue
+        col = "#34A853" if x["var"] >= 0 else "#E5484D"
+        celle.append(f"<div class='idx'><span class='n'>{x['nome']}</span><span class='p'>{num_ch(x['prezzo'], 2)}</span>"
+                     f"<span class='v' style='color:{col}'>{'+' if x['var'] >= 0 else '−'}{num_ch(abs(100 * x['var']), 2)}%</span></div>")
+    st.markdown("<style>.idxbar{display:flex;flex-wrap:wrap;gap:0.5rem}.idx{display:flex;flex-direction:column;min-width:8.6rem;flex:1;padding:0.45rem 0.7rem;"
+                "border:1px solid var(--bordo);border-radius:10px;background:var(--pannello)}.idx .n{font-size:0.72rem;color:var(--tenue)}"
+                ".idx .p{font-weight:650;font-size:0.95rem}.idx .v{font-size:0.82rem;font-weight:600}</style><div class='idxbar'>" + "".join(celle) + "</div>", unsafe_allow_html=True)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
 def _news_titoli(simboli: tuple):
     return notizie.notizie_portafogli(list(simboli))
 
 
-@st.cache_data(ttl=900, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def _news_macro():
     return notizie.notizie_macro()
 
@@ -100,7 +125,7 @@ def _tabella_quota(valori: dict, etichette: dict, rif: str) -> str:
 def render():
     st.markdown("<p class='hero-etichetta'>REPORT FINANZIARI</p>", unsafe_allow_html=True)
     st.markdown(f"## {NOME_STUDIO}")
-    _html(_tape(), 74)
+    _barra_indici()
     clienti = dati.elenco_clienti()
     reg = dati.carica_registro()
     ag = live.aggrega(clienti)

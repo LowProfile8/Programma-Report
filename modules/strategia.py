@@ -49,25 +49,72 @@ torta = grafici.torta
 linea = grafici.linea
 
 
+_LAVORI: dict = {}          # id strategia -> {"firma", "res"}: ricalcoli dei prezzi eseguiti in background (condiviso fra le sessioni dell'app)
+
+
+def _avvia_lavoro(c, reg, pf, f):
+    """Ricalcola prezzi e performance su una COPIA in un thread: la pagina resta subito utilizzabile con gli ultimi dati."""
+    import copy
+    import threading
+    pid = pf["id"]
+    c2, pf2 = copy.deepcopy(c), None
+    pf2 = next(p_ for p_ in c2["portafogli"] if p_["id"] == pid)
+    job = {"firma": f, "res": None}
+    _LAVORI[pid] = job
+
+    def corpo():
+        try:
+            live.aggiorna(c2, pf2, reg)
+            r = pf2.get("live") or {}
+            r["firma"] = f                     # anche se è andata male: niente cicli infiniti, l'errore resta visibile in panoramica
+            job["res"] = r
+        except Exception as e:                  # pragma: no cover
+            job["res"] = {**(pf.get("live") or {}), "firma": f, "errore": str(e)}
+    threading.Thread(target=corpo, daemon=True).start()
+
+
+@st.fragment(run_every=2)
+def _attendi_live(pid):
+    job = _LAVORI.get(pid)
+    if job is None or job["res"] is not None:
+        st.rerun()
+        return
+    st.caption("⟳ Aggiorno prezzi e performance in background: puoi continuare a lavorare, la pagina si aggiorna da sola.")
+
+
 def _live(c, reg, pf, forza=False):
-    """Ricalcola lo stato in diretta quando cambiano i dati (o su richiesta) e lo salva nel cliente."""
+    """Stato in diretta del portafoglio. Il primo calcolo è immediato; i successivi (dopo una modifica) girano in background."""
+    pid = pf["id"]
     f = live.firma(c, pf, reg)
-    chiave = f"lv_{pf['id']}"
     L = pf.get("live") or {}
-    if not st.session_state.get(f"auto_{pf['id']}"):               # alla prima apertura i prezzi si rileggono, ma solo se i dati salvati non sono freschi
-        st.session_state[f"auto_{pf['id']}"] = True
+    job = _LAVORI.get(pid)
+    if job and job["res"] is not None:                              # un ricalcolo in background è finito
+        if job["firma"] == f:
+            pf["live"] = job["res"]
+            dati.salva_cliente(c)
+            L = pf["live"]
+        _LAVORI.pop(pid, None)
+        job = None
+    if not st.session_state.get(f"auto_{pid}"):                    # alla prima apertura i prezzi si rileggono, ma solo se i dati salvati non sono freschi
+        st.session_state[f"auto_{pid}"] = True
         try:
             eta = (datetime.now() - datetime.fromisoformat(L["aggiornato"])).total_seconds() if L.get("aggiornato") else None
         except Exception:
             eta = None
         if eta is None or eta > 1800 or L.get("firma") != f:
-            forza = True
-    if forza or (L.get("firma") != f and st.session_state.get(chiave) != f):
-        st.session_state[chiave] = f
+            forza = "bg"
+    if forza is True or (not L and (forza or L.get("firma") != f)):    # richiesta esplicita o nessun dato salvato: calcolo subito
         with st.spinner("Aggiorno prezzi e performance…"):
             live.aggiorna(c, pf, reg)
             dati.salva_cliente(c)
-    return pf.get("live") or {}
+        _LAVORI.pop(pid, None)
+        return pf.get("live") or {}
+    if (forza == "bg" or L.get("firma") != f) and not (job and job["firma"] == f):
+        _avvia_lavoro(c, reg, pf, f)
+        job = _LAVORI.get(pid)
+    if job and job["res"] is None:
+        _attendi_live(pid)
+    return L
 
 
 # ───────────────────────── testata della strategia (dentro il riquadro unico in alto) ─────────────────────────

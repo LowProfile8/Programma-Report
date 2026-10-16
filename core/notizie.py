@@ -46,12 +46,40 @@ def notizie_titolo(simbolo: str, etichetta: str = "", limite: int = 4) -> list[d
         return []
 
 
-def notizie_macro(limite: int = 12) -> list[dict]:
+ARGOMENTI_MACRO = [
+    "banche centrali BCE Fed tassi", "inflazione prezzi al consumo", "disoccupazione mercato del lavoro occupazione", "prezzo del petrolio greggio Brent",
+    "Trump dazi economia", "guerra Ucraina Medio Oriente mercati", "aspettative taglio tassi Fed BCE", "Borse mercati azionari oggi",
+]
+
+
+def notizie_macro(limite: int = 14, ore: int = 36) -> list[dict]:
+    """Le notizie macro più recenti possibile: una ricerca per argomento (ultime ore), in parallelo, unite e ordinate per ora di uscita."""
+    from concurrent.futures import ThreadPoolExecutor
+    from datetime import datetime, timedelta, timezone
+
+    def una(arg: str) -> list[dict]:
+        try:
+            q = quote(f"{arg} when:{max(1, ore // 24 or 1)}d")
+            return parse_rss(_get(f"https://news.google.com/rss/search?q={q}&hl=it&gl=IT&ceid=IT:it"), "Macro", 10)
+        except Exception:
+            return []
+
     try:
-        q = quote("economia mercati banche centrali inflazione tassi")
-        return parse_rss(_get(f"https://news.google.com/rss/search?q={q}&hl=it&gl=IT&ceid=IT:it"), "Macro", limite)
+        with ThreadPoolExecutor(max_workers=len(ARGOMENTI_MACRO)) as ex:
+            gruppi = list(ex.map(una, ARGOMENTI_MACRO))
     except Exception:
         return []
+    tutte = [n for g in gruppi for n in g if n["data"]]
+    tutte.sort(key=lambda x: x["data"], reverse=True)
+    limite_t = (datetime.now(timezone.utc) - timedelta(hours=ore)).isoformat()
+    visti, out = set(), []
+    for n in tutte:
+        chiave = re.sub(r"\W+", "", n["titolo"].lower())[:60]
+        if chiave in visti or n["data"] < limite_t:
+            continue
+        visti.add(chiave)
+        out.append(n)
+    return out[:limite]
 
 
 def notizie_portafogli(simboli: list[tuple[str, str]], per_titolo: int = 3, totale: int = 18) -> list[dict]:
